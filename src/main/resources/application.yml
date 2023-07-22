@@ -1,0 +1,10 @@
+
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis
+      timeout: 60000
+  application:
+    name: spring-redis-playground
