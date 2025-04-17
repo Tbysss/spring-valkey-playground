@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("demo")
 @RequiredArgsConstructor
 @Slf4j
 public class DemoController {
@@ -70,4 +69,10 @@ public class DemoController {
     public void partialRead(){
         // demo6: partial read
     }
+
+    @PostMapping("/demo7")
+    public void demo7(){
+        dataService.testMassGet();
+    }
+
 }

@@ -26,10 +26,10 @@ import org.springframework.data.redis.core.RedisKeyValueTemplate;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.convert.RedisCustomConversions;
 import org.springframework.data.redis.core.mapping.RedisMappingContext;
+import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.lang.NonNullApi;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -37,6 +37,7 @@ import java.util.Base64;
 
 @Slf4j
 @Configuration
+@EnableRedisRepositories
 public class RedisConfig {
 
     private @Value("${demo.redis.commandTimeout:6000ms}") Duration redisCommandTimeout;
