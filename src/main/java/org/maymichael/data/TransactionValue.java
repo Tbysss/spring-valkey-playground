@@ -22,4 +22,6 @@ public class TransactionValue {
 
     @Indexed
     private String something;
+
+    private BinaryData binaryData;
 }

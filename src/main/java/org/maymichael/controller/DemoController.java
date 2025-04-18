@@ -75,4 +75,10 @@ public class DemoController {
         dataService.testMassGet();
     }
 
+    @PostMapping("/demo8")
+    public void demo8(){
+        // save big chunk of data
+        dataService.saveBigData();
+    }
+
 }

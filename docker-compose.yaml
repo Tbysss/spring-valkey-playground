@@ -1,0 +1,74 @@
+networks:
+  app:
+
+services:
+  valkey-primary:
+    image: &valkey bitnami/valkey:8.1
+    ports:
+      - "6379:6379"
+    environment:
+      VALKEY_REPLICATION_MODE: primary
+      ALLOW_EMPTY_PASSWORD: yes
+      VALKEY_DISABLE_COMMANDS: FLUSHDB,FLUSHALL
+      VALKEY_AOF_ENABLED: no
+    #volumes:
+    #    - 'valkey_data:/bitnami/valkey/data'
+    networks:
+      - app
+
+  valkey-replica:
+    image: *valkey
+    ports:
+      - '6379'
+    depends_on:
+      - valkey-primary
+    environment:
+      VALKEY_REPLICATION_MODE: replica
+      VALKEY_PRIMARY_HOST: valkey-primary
+      VALKEY_PRIMARY_PORT_NUMBER: 6379
+      ALLOW_EMPTY_PASSWORD: yes
+      VALKEY_DISABLE_COMMANDS: FLUSHDB,FLUSHALL
+      VALKEY_AOF_ENABLED: no
+    networks:
+      - app
+    deploy:
+      mode: replicated
+      replicas: 3
+
+  sentinel:
+    image: &valkeySentinel bitnami/valkey-sentinel:8.1
+    ulimits:
+      memlock: -1
+    ports:
+      - '26379-26381:26379'
+    environment: &sentinelEnv
+      VALKEY_PRIMARY_HOST: valkey-primary
+      VALKEY_SENTINEL_AOF_ENABLED: no
+      VALKEY_SENTINEL_QUORUM: 2
+      VALKEY_SENTINEL_DOWN_AFTER_MILLISECONDS: 2000
+      VALKEY_SENTINEL_FAILOVER_TIMEOUT: 6000
+    depends_on:
+      - valkey-primary
+      - valkey-replica
+    networks:
+      app:
+        aliases:
+          - sentinel
+    deploy:
+      mode: replicated
+      replicas: 3
+
+  redis-commander:
+    container_name: redis-commander
+    hostname: redis-commander
+    image: ghcr.io/joeferner/redis-commander:latest
+    restart: always
+    environment:
+      SENTINEL_HOST: sentinel
+      SENTINEL_PORT: 26379
+      SENTINEL_NAME: myprimary
+    ports:
+      - "8081:8081"
+    user: redis
+    networks:
+      - app

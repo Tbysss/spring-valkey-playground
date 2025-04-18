@@ -1,11 +1,18 @@
 package org.maymichael.config;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
+import com.esotericsoftware.kryo.util.Pool;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.lettuce.core.ClientOptions;
-import io.lettuce.core.SocketOptions;
+import io.lettuce.core.ReadFrom;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
 import org.maymichael.data.BinaryData;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
@@ -14,10 +21,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.ReadingConverter;
 import org.springframework.data.convert.WritingConverter;
-import org.springframework.data.redis.connection.RedisConfiguration;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.RedisPassword;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.*;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.PipelinedRedisKeyValueAdapter;
@@ -27,54 +31,38 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.convert.RedisCustomConversions;
 import org.springframework.data.redis.core.mapping.RedisMappingContext;
 import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
+import org.springframework.data.redis.serializer.*;
+import org.springframework.util.StopWatch;
+import org.xerial.snappy.Snappy;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Base64;
 
 @Slf4j
 @Configuration
 @EnableRedisRepositories
+@RequiredArgsConstructor
 public class RedisConfig {
 
-    private @Value("${demo.redis.commandTimeout:6000ms}") Duration redisCommandTimeout;
+    @Value("${spring.data.redis.timeout}")
+    private Duration redisCommandTimeout;
 
-    private @Value("${demo.redis.socketTimeout:400ms}") Duration socketTimeout;
+
+    private final RedisProperties redisProperties;
 
     @Bean
-    RedisConfiguration redisConfiguration(final RedisProperties props) {
-        var config = new RedisStandaloneConfiguration(props.getHost(), props.getPort());
-        config.setPassword(RedisPassword.of(props.getPassword()));
-        config.setDatabase(props.getDatabase());
-        return config;
-    }
-
-    private LettuceConnectionFactory lettuceConnectionFactory(final RedisConfiguration serverConfig) {
-        final SocketOptions socketOptions = SocketOptions.builder()
-                .connectTimeout(socketTimeout).build();
-        final ClientOptions clientOptions = ClientOptions.builder()
-                .socketOptions(socketOptions).build();
+    protected LettuceConnectionFactory redisConnectionFactory() {
+        RedisSentinelConfiguration sentinelConfig = new RedisSentinelConfiguration()
+                .master(redisProperties.getSentinel().getMaster());
+        redisProperties.getSentinel().getNodes().forEach(s -> sentinelConfig.sentinel(s.split(":")[0], Integer.valueOf(s.split(":")[1])));
+        sentinelConfig.setPassword(RedisPassword.of(redisProperties.getPassword()));
 
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
-                .commandTimeout(redisCommandTimeout)
-                .clientOptions(clientOptions)
-                .build();
-
-        final LettuceConnectionFactory lettuceConnectionFactory = new LettuceConnectionFactory(serverConfig,
-                clientConfig);
-        lettuceConnectionFactory.setValidateConnection(true);
-        lettuceConnectionFactory.setConvertPipelineAndTxResults(false);
-        lettuceConnectionFactory.setEagerInitialization(true);
-        lettuceConnectionFactory.setDatabase(serverConfig.getDatabaseOrElse(() -> 0));
-        return lettuceConnectionFactory;
-    }
-
-    @Bean
-    public RedisConnectionFactory redisConnectionFactory(final RedisConfiguration serverConfig) {
-        return lettuceConnectionFactory(serverConfig);
+                .commandTimeout(redisCommandTimeout).readFrom(ReadFrom.MASTER_PREFERRED).build();
+        return new LettuceConnectionFactory(sentinelConfig, clientConfig);
     }
 
     @Bean
@@ -86,6 +74,7 @@ public class RedisConfig {
                 .setDefaultPropertyInclusion(JsonInclude.Include.NON_EMPTY);
     }
 
+
     @Bean
     RedisTemplate<?, ?> redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
 
@@ -94,9 +83,9 @@ public class RedisConfig {
         var mapper = objectMapper();
 
         template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer(mapper));
         template.setHashKeySerializer(new StringRedisSerializer());
         template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(mapper));
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer(mapper));
         template.setDefaultSerializer(new GenericJackson2JsonRedisSerializer(mapper));
 
         return template;
@@ -113,20 +102,84 @@ public class RedisConfig {
     public class BinaryDataToBytesConverter implements Converter<BinaryData, byte[]> {
 
         private final Jackson2JsonRedisSerializer<BinaryData> serializer;
+        private final ObjectMapper objectMapper;
+        private KryoRedisSerializer<BinaryData> kryoRedisSerializer;
 
         public BinaryDataToBytesConverter() {
-            serializer = new Jackson2JsonRedisSerializer<>(objectMapper(), BinaryData.class);
+            objectMapper = objectMapper();
+            serializer = new Jackson2JsonRedisSerializer<>(objectMapper, BinaryData.class);
+            kryoRedisSerializer = new KryoRedisSerializer<>();
         }
 
         @Override
         @SneakyThrows
         public byte[] convert(BinaryData value) {
-            if (value.getData() != null) {
-                var serialized = value.getData();
-                value.setStringData(Base64.getEncoder().encodeToString(serialized));
-                value.setData(null);
+            var sw = new StopWatch();
+            var displaySize = FileUtils.byteCountToDisplaySize(value.getData() != null ? value.getData().length : 0);
+            sw.start();
+//            if (value.getData() != null) {
+//                value.setDataWrapper(List.of(value.getData()));
+//                value.setStringData(Base64.getEncoder().encodeToString(value.getData()));
+//                value.setData(null);
+//            }
+//            var serialized = serializer.serialize(value);
+//            var serialized = JacksonObjectWriter.create().write(objectMapper, value);
+            var serialized = kryoRedisSerializer.serialize(value);
+            sw.stop();
+            log.trace("serialize: duration={}ms id={} dataSize=\"{}\"",
+                    sw.getTotalTimeMillis(),
+                    value.getId(),
+                    displaySize);
+            return serialized;
+        }
+    }
+
+    static class KryoRedisSerializer<T> implements RedisSerializer<T> {
+
+        private static final Pool<Kryo> kryoPool = new Pool<Kryo>(true, false, 8) {
+            protected Kryo create() {
+                Kryo kryo = new Kryo();
+                // Configure the Kryo instance.
+                kryo.setRegistrationRequired(true);
+                kryo.register(BinaryData.class);
+                kryo.register(byte[].class);
+                kryo.register(String.class);
+                return kryo;
             }
-            return serializer.serialize(value);
+        };
+
+        @Override
+        public byte[] serialize(T value) throws SerializationException {
+            if (value == null) {
+                return null;
+            }
+            var kryo = kryoPool.obtain();
+            try {
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                Output output = new Output(stream);
+                kryo.writeClassAndObject(output, value);
+                output.close();
+                return stream.toByteArray();
+            } finally {
+                kryoPool.free(kryo);
+            }
+        }
+
+        @Override
+        public T deserialize(byte[] bytes) throws SerializationException {
+            if (bytes == null)
+                return null;
+
+            var kryo = kryoPool.obtain();
+            try {
+                ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+                try (var input = new Input(bais)) {
+                    //noinspection unchecked
+                    return (T) kryo.readClassAndObject(input);
+                }
+            } finally {
+                kryoPool.free(kryo);
+            }
         }
     }
 
@@ -134,21 +187,39 @@ public class RedisConfig {
     public class BytesToBinaryDataConverter implements Converter<byte[], BinaryData> {
 
         private final Jackson2JsonRedisSerializer<BinaryData> serializer;
+        private final JavaType dataType;
+        private final ObjectMapper objectMapper;
+        private KryoRedisSerializer<BinaryData> kryoRedisSerializer;
 
         public BytesToBinaryDataConverter() {
-            serializer = new Jackson2JsonRedisSerializer<>(objectMapper(), BinaryData.class);
+            objectMapper = objectMapper();
+            serializer = new Jackson2JsonRedisSerializer<>(objectMapper, BinaryData.class);
+            dataType = objectMapper.constructType(BinaryData.class);
+            kryoRedisSerializer = new KryoRedisSerializer<>();
         }
 
         @Override
         @SneakyThrows
-        public BinaryData convert(byte[] value) {
-            var img = (BinaryData) serializer.deserialize(value);
-            if (img != null && img.getStringData() != null) {
-                var uncompressed = Base64.getDecoder().decode(img.getStringData());
-                img.setData(uncompressed);
-                img.setStringData(null);
-            }
-            return img;
+        public BinaryData convert(byte @NonNull [] value) {
+            var sw = new StopWatch();
+            sw.start();
+//            var deserialized = (BinaryData) JacksonObjectReader.create().read(objectMapper, value, dataType);
+//            var deserialized = serializer.deserialize(value);
+            var deserialized = kryoRedisSerializer.deserialize(value);
+            if (deserialized == null) return null;
+////            if (deserialized.getDataWrapper() != null && deserialized.getDataWrapper().size() == 1) {
+////                deserialized.setData(deserialized.getDataWrapper().getFirst());
+////            }
+////            if (deserialized.getStringData() != null) {
+////                deserialized.setData(Base64.getDecoder().decode(deserialized.getStringData()));
+////                deserialized.setStringData(null);
+////            }
+            sw.stop();
+            log.trace("deserialize: duration={}ms id={} dataSize=\"{}\"",
+                    sw.getTotalTimeMillis(),
+                    deserialized.getId(),
+                    FileUtils.byteCountToDisplaySize(deserialized.getData() != null ? deserialized.getData().length : 0));
+            return deserialized;
         }
     }
 
