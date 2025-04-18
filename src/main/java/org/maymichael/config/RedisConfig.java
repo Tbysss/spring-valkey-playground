@@ -8,6 +8,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.ReadFrom;
+import io.lettuce.core.TimeoutOptions;
+import io.lettuce.core.cluster.ClusterClientOptions;
+import io.lettuce.core.cluster.ClusterTopologyRefreshOptions;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -53,16 +56,32 @@ public class RedisConfig {
 
     private final RedisProperties redisProperties;
 
+
     @Bean
     protected LettuceConnectionFactory redisConnectionFactory() {
-        RedisSentinelConfiguration sentinelConfig = new RedisSentinelConfiguration()
-                .master(redisProperties.getSentinel().getMaster());
-        redisProperties.getSentinel().getNodes().forEach(s -> sentinelConfig.sentinel(s.split(":")[0], Integer.valueOf(s.split(":")[1])));
-        sentinelConfig.setPassword(RedisPassword.of(redisProperties.getPassword()));
+//        RedisSentinelConfiguration config = new RedisSentinelConfiguration()
+//                .master(redisProperties.getSentinel().getMaster());
+//        redisProperties.getSentinel().getNodes().forEach(s -> config.sentinel(s.split(":")[0], Integer.valueOf(s.split(":")[1])));
+//        config.setPassword(RedisPassword.of(redisProperties.getPassword()));
+        ClusterClientOptions clusterClientOptions = ClusterClientOptions.builder()
+                .timeoutOptions(TimeoutOptions.enabled(Duration.ofSeconds(60L)))
+                .topologyRefreshOptions(ClusterTopologyRefreshOptions.builder()
+                        .enablePeriodicRefresh(Duration.ofSeconds(60L)) // Refresh the topology periodically.
+                        .enableAllAdaptiveRefreshTriggers() // Refresh the topology based on events.
+                        .build())
+                .build();
+
+        RedisClusterConfiguration config = new RedisClusterConfiguration();
+        redisProperties.getCluster().getNodes().forEach(s -> config.addClusterNode(RedisNode.fromString(s)));
+        config.setMaxRedirects(redisProperties.getCluster().getMaxRedirects());
+        config.setPassword(RedisPassword.of(redisProperties.getPassword()));
 
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
-                .commandTimeout(redisCommandTimeout).readFrom(ReadFrom.MASTER_PREFERRED).build();
-        return new LettuceConnectionFactory(sentinelConfig, clientConfig);
+                .commandTimeout(redisCommandTimeout)
+                .readFrom(ReadFrom.REPLICA_PREFERRED)
+                .clientOptions(clusterClientOptions)
+                .build();
+        return new LettuceConnectionFactory(config, clientConfig);
     }
 
     @Bean
@@ -76,7 +95,7 @@ public class RedisConfig {
 
 
     @Bean
-    RedisTemplate<?, ?> redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
+    RedisTemplate redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
 
         RedisTemplate<String, byte[]> template = new RedisTemplate<>();
         template.setConnectionFactory(redisConnectionFactory);

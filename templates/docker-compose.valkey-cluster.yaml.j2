@@ -1,0 +1,61 @@
+networks:
+  app:
+
+x-valkey-cluster: &valkey
+  image: bitnami/valkey-cluster:8.1
+  ulimits:
+    memlock: -1
+  networks:
+    app:
+
+x-valkey-replica: &valkeyReplica
+  <<: *valkey
+  depends_on:
+  {%- for i in range(primaries) %}
+      - valkey-node-primary-{{i}}
+  {%- endfor %}
+
+x-nodes: &nodes
+  VALKEY_NODES: {% for j in range(primaries) %}valkey-node-primary-{{j}} {% endfor %}{% for j in range(replicas) %}valkey-node-{{j}} {% endfor %}
+
+x-creator: &creator
+  VALKEY_CLUSTER_CREATOR: yes
+  VALKEY_CLUSTER_REPLICAS: {{(primaries/2)|round(0, 'ceil')|int}}
+
+x-env-defaults: &keys
+  VALKEY_AOF_ENABLED: no
+  ALLOW_EMPTY_PASSWORD: yes
+  #VALKEY_CLUSTER_ANNOUNCE_HOSTNAME: valkey
+  #VALKEY_CLUSTER_PREFERRED_ENDPOINT_TYPE: hostname
+  VALKEY_CLUSTER_SLEEP_BEFORE_DNS_LOOKUP: 10
+
+
+services:
+{%- for i in range(primaries) %}
+  valkey-node-primary-{{i}}:
+    <<: *valkey
+    hostname: valkey-node-primary-{{i}}
+    environment:
+      <<: [*nodes, *creator, *keys]
+{%- endfor %}
+
+{% for i in range(replicas) %}
+  valkey-node-{{i}}:
+    <<: *valkeyReplica
+    hostname: valkey-node-{{i}}
+    environment:
+      <<: [*nodes, *keys]
+{% endfor %}
+
+  app:
+    image: spring-redis-playground:1.0-SNAPSHOT
+    ports:
+      - 8080:8080
+    networks:
+      app:
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxDirectMemorySize=100M
+    deploy:
+      resources:
+        limits:
+          memory: 8G

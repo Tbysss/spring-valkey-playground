@@ -25,33 +25,16 @@ public class BinaryData implements Serializable {
     @Builder.Default
     private String id = UUID.randomUUID().toString();
 
-    // we need a list here, otherwise spring data will iterate through each byte
-    // by wrapping it into a list, we only iterate through each byte[]
-//    private List<byte[]> dataWrapper;
-//
-//    public byte[] data() {
-//        if (dataWrapper == null)
-//            return null;
-//        if(dataWrapper.isEmpty())
-//            return null;
-//        return dataWrapper.getFirst();
-//    }
-
     // transient tells spring data redis to not look at this while indexing and other stuff
     // if we use a custom serializer, we can still serialize/deserialize this data to redis
     // not loosing it
     @Transient
     private byte[] data;
 
-    private String stringData;
-
-    public byte[] data() {
-        return data;
-    }
 
     @ToString.Include
     public Integer dataByteSize() {
-        return Optional.ofNullable(data()).map(s -> s.length).orElse(0)
+        return Optional.ofNullable(data).map(s -> s.length).orElse(0)
                 + id.length();
     }
 }
