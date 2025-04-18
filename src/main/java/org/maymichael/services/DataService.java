@@ -90,9 +90,9 @@ public class DataService {
         }
         sw.start("save");
         // crud
-        tvList.forEach(tv -> {
-            transactionValueRepository.save(tv);
-        });
+//        tvList.forEach(tv -> {
+//            transactionValueRepository.save(tv);
+//        });
         // not pipelined
 //        redisKeyValueTemplate.execute(adapter -> {
 //            tvList.forEach(tv -> {
@@ -101,12 +101,12 @@ public class DataService {
 //            return null;
 //        });
         // pipelined
-//        redisTemplate.executePipelined((RedisCallback<?>) connection -> {
-//            tvList.stream().forEach(tv -> {
-//                redisKeyValueAdapter.putOnConnection(connection, tv.getId(), tv);
-//            });
-//            return null;
-//        });
+        redisTemplate.executePipelined((RedisCallback<?>) connection -> {
+            tvList.stream().forEach(tv -> {
+                redisKeyValueAdapter.putOnConnection(connection, tv.getId(), tv);
+            });
+            return null;
+        });
         sw.stop();
         log.info("save time: duration={}ms totalData=\"{}\"", sw.lastTaskInfo().getTimeMillis(), FileUtils.byteCountToDisplaySize(totalSize));
         for (int i = 0; i < 5; i++) {

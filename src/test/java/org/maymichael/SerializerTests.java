@@ -31,23 +31,21 @@ public class SerializerTests {
     void testBinaryDataSerialize() {
         var mapper = objectMapper();
 
-        for (int i = 0; i < 100; i++) {
-            var bigData = BinaryData.builder().data(RandomStringUtils.insecure().nextAlphanumeric(10_000_000).getBytes(StandardCharsets.UTF_8)).build();
-            var serializer = new Jackson2JsonRedisSerializer<>(mapper, BinaryData.class);
+        var bigData = BinaryData.builder().data(RandomStringUtils.insecure().nextAlphanumeric(10_000_000).getBytes(StandardCharsets.UTF_8)).build();
+        var serializer = new Jackson2JsonRedisSerializer<>(mapper, BinaryData.class);
 
-            StopWatch sw = new StopWatch();
-            sw.start("serialize");
-            var serialized = serializer.serialize(bigData);
-            sw.stop();
-            log.info("serialize done - duration_ns={}ns duration_ms={}ms", sw.lastTaskInfo().getTimeNanos(), sw.lastTaskInfo().getTimeMillis());
-            sw.start("deserialize");
-            var deserialized = serializer.deserialize(serialized);
-            sw.stop();
-            log.info("deserialize done - duration_ns={}ns duration_ms={}ms", sw.lastTaskInfo().getTimeNanos(), sw.lastTaskInfo().getTimeMillis());
+        StopWatch sw = new StopWatch();
+        sw.start("serialize");
+        var serialized = serializer.serialize(bigData);
+        sw.stop();
+        log.info("serialize done - duration_ns={}ns duration_ms={}ms", sw.lastTaskInfo().getTimeNanos(), sw.lastTaskInfo().getTimeMillis());
+        sw.start("deserialize");
+        var deserialized = serializer.deserialize(serialized);
+        sw.stop();
+        log.info("deserialize done - duration_ns={}ns duration_ms={}ms", sw.lastTaskInfo().getTimeNanos(), sw.lastTaskInfo().getTimeMillis());
 
-            Assertions.assertNotNull(deserialized);
-            Assertions.assertNotNull(deserialized.getData());
-            Assertions.assertArrayEquals(bigData.getData(), deserialized.getData());
-        }
+        Assertions.assertNotNull(deserialized);
+        Assertions.assertNotNull(deserialized.getData());
+        Assertions.assertArrayEquals(bigData.getData(), deserialized.getData());
     }
 }

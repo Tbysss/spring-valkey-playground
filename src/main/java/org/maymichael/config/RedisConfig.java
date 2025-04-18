@@ -57,10 +57,6 @@ public class RedisConfig {
 
     @Bean
     protected LettuceConnectionFactory redisConnectionFactory() {
-//        RedisSentinelConfiguration config = new RedisSentinelConfiguration()
-//                .master(redisProperties.getSentinel().getMaster());
-//        redisProperties.getSentinel().getNodes().forEach(s -> config.sentinel(s.split(":")[0], Integer.valueOf(s.split(":")[1])));
-//        config.setPassword(RedisPassword.of(redisProperties.getPassword()));
         ClusterClientOptions clusterClientOptions = ClusterClientOptions.builder()
                 .timeoutOptions(TimeoutOptions.enabled(Duration.ofSeconds(60L)))
                 .topologyRefreshOptions(ClusterTopologyRefreshOptions.builder()
@@ -93,7 +89,7 @@ public class RedisConfig {
 
 
     @Bean
-    RedisTemplate redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
+    RedisTemplate<?,?> redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
 
         RedisTemplate<String, byte[]> template = new RedisTemplate<>();
         template.setConnectionFactory(redisConnectionFactory);
@@ -116,15 +112,11 @@ public class RedisConfig {
     }
 
     @WritingConverter
-    public class BinaryDataToBytesConverter implements Converter<BinaryData, byte[]> {
+    public static class BinaryDataToBytesConverter implements Converter<BinaryData, byte[]> {
 
-        private final Jackson2JsonRedisSerializer<BinaryData> serializer;
-        private final ObjectMapper objectMapper;
         private final KryoRedisSerializer<BinaryData> kryoRedisSerializer;
 
         public BinaryDataToBytesConverter() {
-            objectMapper = objectMapper();
-            serializer = new Jackson2JsonRedisSerializer<>(objectMapper, BinaryData.class);
             kryoRedisSerializer = new KryoRedisSerializer<>();
         }
 
@@ -134,13 +126,6 @@ public class RedisConfig {
             var sw = new StopWatch();
             var displaySize = FileUtils.byteCountToDisplaySize(value.getData() != null ? value.getData().length : 0);
             sw.start();
-//            if (value.getData() != null) {
-//                value.setDataWrapper(List.of(value.getData()));
-//                value.setStringData(Base64.getEncoder().encodeToString(value.getData()));
-//                value.setData(null);
-//            }
-//            var serialized = serializer.serialize(value);
-//            var serialized = JacksonObjectWriter.create().write(objectMapper, value);
             var serialized = kryoRedisSerializer.serialize(value);
             sw.stop();
             log.trace("serialize: duration={}ms id={} dataSize=\"{}\"",

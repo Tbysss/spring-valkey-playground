@@ -49,7 +49,7 @@ public class DemoController {
     public void saveWithPipeline(){
         // demo3: save with pipeline key value adapter
 
-        // advantage: much faster because of pipeline (does not wait for result, no delete)
+        // advantage: much faster because of pipeline (does not wait for results, no delete)
         // disadvantage: lots of safety checks will be removed, custom implementation, not part of spring data core
         // should only be used for a batch insert, not to update existing keys!
     }
