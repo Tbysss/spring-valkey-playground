@@ -36,11 +36,9 @@ import org.springframework.data.redis.core.mapping.RedisMappingContext;
 import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
 import org.springframework.data.redis.serializer.*;
 import org.springframework.util.StopWatch;
-import org.xerial.snappy.Snappy;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.time.Duration;
 import java.util.Arrays;
 
@@ -122,7 +120,7 @@ public class RedisConfig {
 
         private final Jackson2JsonRedisSerializer<BinaryData> serializer;
         private final ObjectMapper objectMapper;
-        private KryoRedisSerializer<BinaryData> kryoRedisSerializer;
+        private final KryoRedisSerializer<BinaryData> kryoRedisSerializer;
 
         public BinaryDataToBytesConverter() {
             objectMapper = objectMapper();
@@ -208,7 +206,7 @@ public class RedisConfig {
         private final Jackson2JsonRedisSerializer<BinaryData> serializer;
         private final JavaType dataType;
         private final ObjectMapper objectMapper;
-        private KryoRedisSerializer<BinaryData> kryoRedisSerializer;
+        private final KryoRedisSerializer<BinaryData> kryoRedisSerializer;
 
         public BytesToBinaryDataConverter() {
             objectMapper = objectMapper();

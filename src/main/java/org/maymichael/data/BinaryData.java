@@ -1,13 +1,9 @@
 package org.maymichael.data;
 
 import lombok.*;
-import org.springframework.data.annotation.Reference;
 import org.springframework.data.annotation.Transient;
-import org.springframework.data.redis.core.convert.RedisData;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
