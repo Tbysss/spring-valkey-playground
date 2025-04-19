@@ -3,9 +3,9 @@ package org.maymichael.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.maymichael.services.DataService;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
@@ -76,9 +76,15 @@ public class DemoController {
     }
 
     @PostMapping("/demo8")
-    public void demo8(){
+    @ResponseBody
+    public ResponseEntity<HttpStatus> demo8(@RequestParam(value = "numItems", defaultValue = "10") int items, @RequestParam(value = "strategy", defaultValue = "2") int strategy){
         // save big chunk of data
-        dataService.saveBigData();
+        if(items < 0 ) return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        if(strategy >= DataService.SaveStrategy.values().length || strategy < 0) {
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+        }
+        dataService.saveBigData(items, DataService.SaveStrategy.values()[strategy]);
+        return new ResponseEntity<>(HttpStatus.OK);
     }
 
 }

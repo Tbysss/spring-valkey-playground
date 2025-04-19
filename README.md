@@ -10,16 +10,19 @@ pip install jinja2 jinja2-cli
 ```
 Compile template to create a valid docker compose file:
 ```aiignore
-jinja2 -o docker-compose.valkey-cluster.yaml templates/docker-compose.valkey-cluster.yaml.j2 templates/cluster.json
+jinja2 templates/docker-compose.valkey-cluster.yaml.j2 templates/cluster.json > docker-compose.yaml
 ```
 
-## builing the app
+### Configuration
+Jinja2 configuration at template/cluster.json. Change `with_app` to `true` if running full containerized setup.
+
+## Builing the app
 
 ```aiignore
 ./gradlew bootBuildImage
 ```
 
-## running the playground
+## Running the playground
 
 ```aiignore
 docker compose -f docker-compose.valkey-cluster.yaml up -d
@@ -31,5 +34,20 @@ Wait a few seconds for the cluster to initialize.
 ```aiignore
 curl -X POST http://localhost:8080/demo8
 ```
+Parameters:
+```aiignore
+# can save with different strategy for comparision
+# 0: uses CRUD interface
+# 1: uses key value adapater (which should be the same as crud, but we can parallize it)
+# 2: uses custom pipelined key value adapter (reuses same connection)
+?strategy=2
+# number of items to save
+?numItems=50
+```
+Example query to save 100 items with the key value adapter strategy:
+```aiignore
+curl -X POST http://localhost:8080/demo8?strategy=1&numItems=100
+```
 
-View logs with `docker compose -f docker-compose.valkey-cluster.yaml logs -f app`
+## Monitoring
+View logs with `docker compose logs -f app`

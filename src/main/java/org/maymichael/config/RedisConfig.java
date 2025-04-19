@@ -51,9 +51,7 @@ public class RedisConfig {
     @Value("${spring.data.redis.timeout}")
     private Duration redisCommandTimeout;
 
-
     private final RedisProperties redisProperties;
-
 
     @Bean
     protected LettuceConnectionFactory redisConnectionFactory() {
@@ -87,22 +85,23 @@ public class RedisConfig {
                 .setDefaultPropertyInclusion(JsonInclude.Include.NON_EMPTY);
     }
 
-
-    @Bean
-    RedisTemplate<?,?> redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
-
-        RedisTemplate<String, byte[]> template = new RedisTemplate<>();
+    private void configureRedisTemplate(RedisTemplate<?, ?> template, final RedisConnectionFactory redisConnectionFactory) {
         template.setConnectionFactory(redisConnectionFactory);
         var mapper = objectMapper();
-
         template.setKeySerializer(new StringRedisSerializer());
         template.setValueSerializer(new GenericJackson2JsonRedisSerializer(mapper));
         template.setHashKeySerializer(new StringRedisSerializer());
         template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer(mapper));
         template.setDefaultSerializer(new GenericJackson2JsonRedisSerializer(mapper));
+    }
 
+    @Bean
+    public RedisTemplate<?, ?> redisTemplate(final RedisConnectionFactory redisConnectionFactory) {
+        RedisTemplate<String, byte[]> template = new RedisTemplate<>();
+        configureRedisTemplate(template, redisConnectionFactory);
         return template;
     }
+
 
     @Bean
     public RedisCustomConversions redisCustomConversions() {
@@ -205,17 +204,8 @@ public class RedisConfig {
         public BinaryData convert(byte @NonNull [] value) {
             var sw = new StopWatch();
             sw.start();
-//            var deserialized = (BinaryData) JacksonObjectReader.create().read(objectMapper, value, dataType);
-//            var deserialized = serializer.deserialize(value);
             var deserialized = kryoRedisSerializer.deserialize(value);
             if (deserialized == null) return null;
-////            if (deserialized.getDataWrapper() != null && deserialized.getDataWrapper().size() == 1) {
-////                deserialized.setData(deserialized.getDataWrapper().getFirst());
-////            }
-////            if (deserialized.getStringData() != null) {
-////                deserialized.setData(Base64.getDecoder().decode(deserialized.getStringData()));
-////                deserialized.setStringData(null);
-////            }
             sw.stop();
             log.trace("deserialize: duration={}ms id={} dataSize=\"{}\"",
                     sw.getTotalTimeMillis(),

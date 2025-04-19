@@ -1,6 +1,7 @@
 networks:
   app:
 
+# main nodes where data is sharded
 x-valkey-cluster: &valkey
   image: bitnami/valkey-cluster:8.1
   ulimits:
@@ -8,6 +9,7 @@ x-valkey-cluster: &valkey
   networks:
     app:
 
+# read only replicas for read requests
 x-valkey-replica: &valkeyReplica
   <<: *valkey
   depends_on:
@@ -19,14 +21,19 @@ x-nodes: &nodes
   VALKEY_NODES: {% for j in range(primaries) %}valkey-node-primary-{{j}} {% endfor %}{% for j in range(replicas) %}valkey-node-{{j}} {% endfor %}
 
 x-creator: &creator
+  # marks this instance as a manager node
   VALKEY_CLUSTER_CREATOR: yes
+  # for quorum
+  # e.g. 3 primaries -> 2 replicas means at least 2 must be up at all times
   VALKEY_CLUSTER_REPLICAS: {{(primaries/2)|round(0, 'ceil')|int}}
 
 x-env-defaults: &keys
+  # no persistence
   VALKEY_AOF_ENABLED: no
+  VALKEY_RDB_POLICY_DISABLED: yes
+  # no password
   ALLOW_EMPTY_PASSWORD: yes
-  #VALKEY_CLUSTER_ANNOUNCE_HOSTNAME: valkey
-  #VALKEY_CLUSTER_PREFERRED_ENDPOINT_TYPE: hostname
+  # make sure all nodes are up before any lookup attempts
   VALKEY_CLUSTER_SLEEP_BEFORE_DNS_LOOKUP: 10
 
 
@@ -35,18 +42,21 @@ services:
   valkey-node-primary-{{i}}:
     <<: *valkey
     hostname: valkey-node-primary-{{i}}
+    {%- if i == 0 %}
+    ports:
+      - 6379:6379
+    {%- endif %}
     environment:
       <<: [*nodes, *creator, *keys]
-{%- endfor %}
-
-{% for i in range(replicas) %}
+{% endfor %}
+{%- for i in range(replicas) %}
   valkey-node-{{i}}:
     <<: *valkeyReplica
     hostname: valkey-node-{{i}}
     environment:
       <<: [*nodes, *keys]
 {% endfor %}
-
+{%- if with_app %}
   app:
     image: spring-redis-playground:1.0-SNAPSHOT
     ports:
@@ -55,7 +65,9 @@ services:
       app:
     environment:
       JAVA_TOOL_OPTIONS: -XX:MaxDirectMemorySize=100M
+      SPRING_PROFILES_ACTIVE: container
     deploy:
       resources:
         limits:
           memory: 8G
+{% endif %}
