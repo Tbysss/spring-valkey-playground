@@ -56,9 +56,9 @@ public class RedisConfig {
     @Bean
     protected LettuceConnectionFactory redisConnectionFactory() {
         ClusterClientOptions clusterClientOptions = ClusterClientOptions.builder()
-                .timeoutOptions(TimeoutOptions.enabled(Duration.ofSeconds(60L)))
+                .timeoutOptions(TimeoutOptions.enabled(Duration.ofSeconds(5L)))
                 .topologyRefreshOptions(ClusterTopologyRefreshOptions.builder()
-                        .enablePeriodicRefresh(Duration.ofSeconds(60L)) // Refresh the topology periodically.
+                        .enablePeriodicRefresh(Duration.ofSeconds(30L)) // Refresh the topology periodically.
                         .enableAllAdaptiveRefreshTriggers() // Refresh the topology based on events.
                         .build())
                 .build();

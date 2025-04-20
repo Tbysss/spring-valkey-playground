@@ -1,5 +1,5 @@
 {
-  "replicas": 2,
   "primaries": 3,
+  "replicas_per_primary":  1,
   "with_app": false
 }

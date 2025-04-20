@@ -14,18 +14,18 @@ x-valkey-replica: &valkeyReplica
   <<: *valkey
   depends_on:
   {%- for i in range(primaries) %}
-      - valkey-node-primary-{{i}}
+      - valkey-primary-{{i}}
   {%- endfor %}
 
 x-nodes: &nodes
-  VALKEY_NODES: {% for j in range(primaries) %}valkey-node-primary-{{j}} {% endfor %}{% for j in range(replicas) %}valkey-node-{{j}} {% endfor %}
+  VALKEY_NODES: {% for j in range(primaries) %}valkey-primary-{{j}} {% endfor %}{% for j in range((primaries*replicas_per_primary)) %}valkey-replica-{{j}} {% endfor %}
 
 x-creator: &creator
-  # marks this instance as a manager node
+  # marks this instance as a primary node
   VALKEY_CLUSTER_CREATOR: yes
-  # for quorum
-  # e.g. 3 primaries -> 2 replicas means at least 2 must be up at all times
-  VALKEY_CLUSTER_REPLICAS: {{(primaries/2)|round(0, 'ceil')|int}}
+  # for replication for each primary
+  # so for 3 primaries and this at 2, each node wants 2 replicas somewhere in the cluster
+  VALKEY_CLUSTER_REPLICAS: {{replicas_per_primary}}
 
 x-env-defaults: &keys
   # no persistence
@@ -39,20 +39,21 @@ x-env-defaults: &keys
 
 services:
 {%- for i in range(primaries) %}
-  valkey-node-primary-{{i}}:
+  valkey-primary-{{i}}:
     <<: *valkey
-    hostname: valkey-node-primary-{{i}}
-    {%- if i == 0 %}
+    hostname: valkey-primary-{{i}}
+    {%- if i == 0 and not with_app %}
+    # local setup, make first node expose its port
     ports:
       - 6379:6379
     {%- endif %}
     environment:
       <<: [*nodes, *creator, *keys]
 {% endfor %}
-{%- for i in range(replicas) %}
-  valkey-node-{{i}}:
+{%- for i in range((primaries*replicas_per_primary)) %}
+  valkey-replica-{{i}}:
     <<: *valkeyReplica
-    hostname: valkey-node-{{i}}
+    hostname: valkey-replica-{{i}}
     environment:
       <<: [*nodes, *keys]
 {% endfor %}

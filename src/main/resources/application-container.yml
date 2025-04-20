@@ -3,6 +3,6 @@ spring:
     redis:
       cluster:
         nodes:
-          - valkey-node-primary-0:6379
-          - valkey-node-primary-1:6379
-          - valkey-node-primary-2:6379
+          - valkey-primary-0:6379
+          - valkey-primary-1:6379
+          - valkey-primary-2:6379

@@ -103,7 +103,7 @@ public class DataService {
             case ADAPTER:
                 // not pipelined ( should be the same as crud )
                 redisKeyValueTemplate.execute(adapter -> {
-                    // but by paralleling this loop we can speed up quite a bit
+                    // but by parallelizing this loop we can speed up quite a bit
                     tvList.parallelStream().forEach(tv -> {
                         adapter.put(tv.getId(), tv, resolveKeySpace(tv.getClass()));
                     });
@@ -125,7 +125,8 @@ public class DataService {
                 break;
         }
         sw.stop();
-        log.info("save time: duration={}ms totalData=\"{}\"", sw.lastTaskInfo().getTimeMillis(), FileUtils.byteCountToDisplaySize(totalSize));
+        log.info("save time: duration={}ms totalData=\"{}\" strategy={}", sw.lastTaskInfo().getTimeMillis(),
+                FileUtils.byteCountToDisplaySize(totalSize), strategy.name());
 
         sw.start("read");
         var results = stringRedisTemplate.executePipelined((RedisCallback<?>) con -> {
@@ -137,7 +138,8 @@ public class DataService {
         sw.stop();
         log.info("read time: duration={}ms", sw.lastTaskInfo().getTimeMillis());
 
-        log.info("results={} values={}", results.size(), valuesForTid.size());
+        var totalTransactions = transactionValueRepository.count();
+        log.info("totalTransactions={} values={}", totalTransactions, valuesForTid.size());
     }
 
     private Set<String> getAndCheckData(List<Object> results, ArrayList<TransactionValue> tvList) {

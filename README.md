@@ -16,6 +16,10 @@ jinja2 templates/docker-compose.valkey-cluster.yaml.j2 templates/cluster.json > 
 ### Configuration
 Jinja2 configuration at template/cluster.json. Change `with_app` to `true` if running full containerized setup.
 
+```aiignore
+jinja2 -D with_app=true templates/docker-compose.valkey-cluster.yaml.j2 templates/cluster.json > docker-compose.yaml
+```
+
 ## Builing the app
 
 ```aiignore
