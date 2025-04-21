@@ -16,7 +16,9 @@ import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.Delay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.maymichael.util.BinaryDataBase64ToBytesConverter;
 import org.maymichael.util.BinaryDataToBytesConverter;
+import org.maymichael.util.BytesToBinaryDataBase64Converter;
 import org.maymichael.util.BytesToBinaryDataConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
@@ -63,20 +65,20 @@ public class RedisConfig {
         private final Duration defaultCommandTimeout;
         private final Duration metaCommandTimeout;
 
-        DynamicClusterTimeout(Duration defaultCommandTimeout, Duration metaCommandTimeout){
+        DynamicClusterTimeout(Duration defaultCommandTimeout, Duration metaCommandTimeout) {
             this.defaultCommandTimeout = defaultCommandTimeout;
             this.metaCommandTimeout = metaCommandTimeout;
         }
 
         @Override
         public long getTimeout(RedisCommand<?, ?, ?> command) {
-            if(META_COMMAND_TYPES.contains(command.getType()))
+            if (META_COMMAND_TYPES.contains(command.getType()))
                 return metaCommandTimeout.toMillis();
             return defaultCommandTimeout.toMillis();
         }
     }
 
-    private static Duration min(Duration a, Duration b){
+    private static Duration min(Duration a, Duration b) {
         return Duration.of(Math.min(a.toMillis(), b.toMillis()), ChronoUnit.MILLIS);
     }
 
@@ -172,7 +174,9 @@ public class RedisConfig {
     public RedisCustomConversions redisCustomConversions() {
         return new RedisCustomConversions(Arrays.asList(
                 new BinaryDataToBytesConverter(),
-                new BytesToBinaryDataConverter()));
+                new BytesToBinaryDataConverter(),
+                new BinaryDataBase64ToBytesConverter(objectMapper()),
+                new BytesToBinaryDataBase64Converter(objectMapper())));
     }
 
     @Bean

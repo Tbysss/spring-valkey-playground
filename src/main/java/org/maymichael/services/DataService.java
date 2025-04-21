@@ -24,6 +24,12 @@ public class DataService {
         PIPELINED_ADAPTER,
     }
 
+    public enum SerializerType {
+        RAW,
+        KRYO,
+        BASE64,
+    }
+
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
@@ -50,10 +56,9 @@ public class DataService {
         return redisMappingContext.getRequiredPersistentEntity(type).getKeySpace();
     }
 
-    private List<BinaryData> dataSet;
-    private long totalSize;
+    private List<byte[]> dataSet;
 
-    private List<BinaryData> createDataSet(int size) {
+    public List<byte[]> createDataSet(int size) {
         synchronized (this) {
             if (dataSet == null) {
                 dataSet = new ArrayList<>();
@@ -61,8 +66,7 @@ public class DataService {
             if (dataSet.size() < size) {
                 for (int i = dataSet.size(); i < size; ++i) {
                     var rs = RandomStringUtils.insecure().nextAlphanumeric(1_000_00, 3_000_00);
-                    var bd = BinaryData.builder().data(rs.getBytes(StandardCharsets.UTF_8)).build();
-                    totalSize += bd.getData().length;
+                    var bd = rs.getBytes(StandardCharsets.UTF_8);
                     dataSet.add(bd);
                 }
             }
@@ -70,29 +74,35 @@ public class DataService {
         }
     }
 
+    public void clearDataSet() {
+        synchronized (this) {
+            dataSet.clear();
+        }
+    }
+
     private String buildRedisQuery(Class<?> clazz, String query) {
         return resolveKeySpace(clazz) + ":" + query;
     }
 
-    public void saveBigData(int numItems, SaveStrategy strategy) {
-        var t = Transaction.builder().build();
-        log.info("saveBigData request received - numItems={} strategy={} id={}", numItems, strategy.name(), t.getId());
-        transactionRepository.save(t);
-        long totalSize = 0L;
-        StopWatch sw = new StopWatch();
+    public List<TransactionValue> saveData(String tid, int numItems, SaveStrategy strategy, SerializerType serializerType) {
         var tvList = new ArrayList<TransactionValue>();
+        var totalSize = 0;
+        StopWatch sw = new StopWatch();
         sw.start("create dataset");
         var binaryDataSet = createDataSet(numItems);
         sw.stop();
-        log.info("data set creation time: duration={}ms id={}", sw.lastTaskInfo().getTimeMillis(), t.getId());
+        log.info("data set creation time: duration={}ms id={}", sw.lastTaskInfo().getTimeMillis(), tid);
         for (int i = 0; i < numItems; i++) {
             var something = i % 2 == 0 ? "even" : "odd";
+            var bd = binaryDataSet.get(i);
             var tv = TransactionValue.builder()
-                    .tid(t.getId())
+                    .tid(tid)
                     .something(something)
-                    .binaryData(binaryDataSet.get(i))
+                    .binaryData(serializerType == SerializerType.KRYO ? BinaryData.builder().data(bd).build() : null)
+                    .binaryDataRaw(serializerType == SerializerType.RAW ? BinaryDataRaw.builder().data(bd).build() : null)
+                    .binaryDataBase64(serializerType == SerializerType.BASE64 ? BinaryDataBase64.builder().data(bd).build() : null)
                     .build();
-            totalSize += tv.getBinaryData().getData().length;
+            totalSize += bd.length;
             tvList.add(tv);
         }
         sw.start("save");
@@ -126,9 +136,17 @@ public class DataService {
                 break;
         }
         sw.stop();
-        log.info("save time: duration={}ms totalData=\"{}\" strategy={} id={}", sw.lastTaskInfo().getTimeMillis(),
-                FileUtils.byteCountToDisplaySize(totalSize), strategy.name(), t.getId());
+        log.info("save time: duration={}ms totalData=\"{}\" serializer={} strategy={} id={}", sw.lastTaskInfo().getTimeMillis(),
+                FileUtils.byteCountToDisplaySize(totalSize), serializerType.name(), strategy.name(), tid);
+        return tvList;
+    }
 
+    public void saveBigData(int numItems, SaveStrategy strategy, SerializerType serializerType) {
+        var t = Transaction.builder().build();
+        log.info("saveBigData request received - numItems={} strategy={} id={}", numItems, strategy.name(), t.getId());
+        transactionRepository.save(t);
+        var tvList = saveData(t.getId(), numItems, strategy, serializerType);
+        StopWatch sw = new StopWatch();
         sw.start("read");
         var results = stringRedisTemplate.executePipelined((RedisCallback<?>) con -> {
             con.setCommands().sMembers(buildRedisQuery(TransactionValue.class, "tid:" + t.getId()).getBytes(StandardCharsets.UTF_8));
@@ -137,13 +155,17 @@ public class DataService {
         assert results.size() == 1;
         var valuesForTid = getAndCheckData(results, tvList);
         sw.stop();
-        log.info("read time: duration={}ms id={}", sw.lastTaskInfo().getTimeMillis(), t.getId());
+        log.info("read time: duration={}ms serializer={} id={}", sw.lastTaskInfo().getTimeMillis(), serializerType.name(), t.getId());
 
         var totalTransactions = transactionValueRepository.count();
-        log.info("totalTransactions={} values={} id={}", totalTransactions, valuesForTid.size(), t.getId());
+        log.info("totalTransactions={} values={} serializer={} id={}", totalTransactions, valuesForTid.size(), serializerType.name(), t.getId());
     }
 
-    private Set<String> getAndCheckData(List<Object> results, ArrayList<TransactionValue> tvList) {
+    public List<TransactionValue> getDataForId(String tid) {
+        return transactionValueRepository.findAllByTid(tid);
+    }
+
+    private Set<String> getAndCheckData(List<Object> results, List<TransactionValue> tvList) {
         @SuppressWarnings("unchecked") var valuesForTid = (Set<String>) results.getFirst();
 
         valuesForTid.forEach(tvid -> {

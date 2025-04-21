@@ -24,4 +24,6 @@ public class TransactionValue {
     private String something;
 
     private BinaryData binaryData;
+    private BinaryDataRaw binaryDataRaw;
+    private BinaryDataBase64 binaryDataBase64;
 }
