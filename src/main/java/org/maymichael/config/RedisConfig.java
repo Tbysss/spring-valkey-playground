@@ -1,11 +1,6 @@
 package org.maymichael.config;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
-import com.esotericsoftware.kryo.util.Pool;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.ReadFrom;
 import io.lettuce.core.TimeoutOptions;
@@ -13,19 +8,14 @@ import io.lettuce.core.cluster.ClusterClientOptions;
 import io.lettuce.core.cluster.ClusterTopologyRefreshOptions;
 import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.Delay;
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.FileUtils;
-import org.maymichael.data.BinaryData;
+import org.maymichael.util.BinaryDataToBytesConverter;
+import org.maymichael.util.BytesToBinaryDataConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.convert.converter.Converter;
-import org.springframework.data.convert.ReadingConverter;
-import org.springframework.data.convert.WritingConverter;
 import org.springframework.data.redis.connection.*;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
@@ -37,10 +27,7 @@ import org.springframework.data.redis.core.convert.RedisCustomConversions;
 import org.springframework.data.redis.core.mapping.RedisMappingContext;
 import org.springframework.data.redis.repository.configuration.EnableRedisRepositories;
 import org.springframework.data.redis.serializer.*;
-import org.springframework.util.StopWatch;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
@@ -142,111 +129,6 @@ public class RedisConfig {
         return new RedisCustomConversions(Arrays.asList(
                 new BinaryDataToBytesConverter(),
                 new BytesToBinaryDataConverter()));
-    }
-
-    @WritingConverter
-    public static class BinaryDataToBytesConverter implements Converter<BinaryData, byte[]> {
-
-        private final KryoRedisSerializer<BinaryData> kryoRedisSerializer;
-
-        public BinaryDataToBytesConverter() {
-            kryoRedisSerializer = new KryoRedisSerializer<>();
-        }
-
-        @Override
-        @SneakyThrows
-        public byte[] convert(BinaryData value) {
-            var sw = new StopWatch();
-            var displaySize = FileUtils.byteCountToDisplaySize(value.getData() != null ? value.getData().length : 0);
-            sw.start();
-            var serialized = kryoRedisSerializer.serialize(value);
-            sw.stop();
-            log.trace("serialize: duration={}ms id={} dataSize=\"{}\"",
-                    sw.getTotalTimeMillis(),
-                    value.getId(),
-                    displaySize);
-            return serialized;
-        }
-    }
-
-    static class KryoRedisSerializer<T> implements RedisSerializer<T> {
-
-        private static final Pool<Kryo> kryoPool = new Pool<Kryo>(true, false, 8) {
-            protected Kryo create() {
-                Kryo kryo = new Kryo();
-                // Configure the Kryo instance.
-                kryo.setRegistrationRequired(true);
-                kryo.register(BinaryData.class);
-                kryo.register(byte[].class);
-                kryo.register(String.class);
-                return kryo;
-            }
-        };
-
-        @Override
-        public byte[] serialize(T value) throws SerializationException {
-            if (value == null) {
-                return null;
-            }
-            var kryo = kryoPool.obtain();
-            try {
-                ByteArrayOutputStream stream = new ByteArrayOutputStream();
-                Output output = new Output(stream);
-                kryo.writeClassAndObject(output, value);
-                output.close();
-                return stream.toByteArray();
-            } finally {
-                kryoPool.free(kryo);
-            }
-        }
-
-        @Override
-        public T deserialize(byte[] bytes) throws SerializationException {
-            if (bytes == null)
-                return null;
-
-            var kryo = kryoPool.obtain();
-            try {
-                ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-                try (var input = new Input(bais)) {
-                    //noinspection unchecked
-                    return (T) kryo.readClassAndObject(input);
-                }
-            } finally {
-                kryoPool.free(kryo);
-            }
-        }
-    }
-
-    @ReadingConverter
-    public class BytesToBinaryDataConverter implements Converter<byte[], BinaryData> {
-
-        private final Jackson2JsonRedisSerializer<BinaryData> serializer;
-        private final JavaType dataType;
-        private final ObjectMapper objectMapper;
-        private final KryoRedisSerializer<BinaryData> kryoRedisSerializer;
-
-        public BytesToBinaryDataConverter() {
-            objectMapper = objectMapper();
-            serializer = new Jackson2JsonRedisSerializer<>(objectMapper, BinaryData.class);
-            dataType = objectMapper.constructType(BinaryData.class);
-            kryoRedisSerializer = new KryoRedisSerializer<>();
-        }
-
-        @Override
-        @SneakyThrows
-        public BinaryData convert(byte @NonNull [] value) {
-            var sw = new StopWatch();
-            sw.start();
-            var deserialized = kryoRedisSerializer.deserialize(value);
-            if (deserialized == null) return null;
-            sw.stop();
-            log.trace("deserialize: duration={}ms id={} dataSize=\"{}\"",
-                    sw.getTotalTimeMillis(),
-                    deserialized.getId(),
-                    FileUtils.byteCountToDisplaySize(deserialized.getData() != null ? deserialized.getData().length : 0));
-            return deserialized;
-        }
     }
 
     @Bean
