@@ -2,10 +2,16 @@ package org.maymichael.config;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.ImmutableSet;
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.ReadFrom;
+import io.lettuce.core.SocketOptions;
 import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.cluster.ClusterClientOptions;
 import io.lettuce.core.cluster.ClusterTopologyRefreshOptions;
+import io.lettuce.core.protocol.CommandType;
+import io.lettuce.core.protocol.ProtocolKeyword;
+import io.lettuce.core.protocol.RedisCommand;
 import io.lettuce.core.resource.ClientResources;
 import io.lettuce.core.resource.Delay;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +35,9 @@ import org.springframework.data.redis.repository.configuration.EnableRedisReposi
 import org.springframework.data.redis.serializer.*;
 
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -43,14 +51,54 @@ public class RedisConfig {
 
     private final RedisProperties redisProperties;
 
+    static class DynamicClusterTimeout extends TimeoutOptions.TimeoutSource {
+        private static final Set<ProtocolKeyword> META_COMMAND_TYPES = ImmutableSet.<ProtocolKeyword>builder()
+                .add(CommandType.FLUSHDB)
+                .add(CommandType.FLUSHALL)
+                .add(CommandType.CLUSTER)
+                .add(CommandType.INFO)
+                .add(CommandType.KEYS)
+                .build();
+
+        private final Duration defaultCommandTimeout;
+        private final Duration metaCommandTimeout;
+
+        DynamicClusterTimeout(Duration defaultCommandTimeout, Duration metaCommandTimeout){
+            this.defaultCommandTimeout = defaultCommandTimeout;
+            this.metaCommandTimeout = metaCommandTimeout;
+        }
+
+        @Override
+        public long getTimeout(RedisCommand<?, ?, ?> command) {
+            if(META_COMMAND_TYPES.contains(command.getType()))
+                return metaCommandTimeout.toMillis();
+            return defaultCommandTimeout.toMillis();
+        }
+    }
+
+    private static Duration min(Duration a, Duration b){
+        return Duration.of(Math.min(a.toMillis(), b.toMillis()), ChronoUnit.MILLIS);
+    }
+
     @Bean
     protected LettuceConnectionFactory redisConnectionFactory() {
+
+        // socket connect timeout should be lower than command timeout for lettuce
+        var socketOptions = SocketOptions.builder()
+                .connectTimeout(min(redisCommandTimeout.dividedBy(2), Duration.ofMillis(500)))
+                .build();
+
         // total time cluster will be unavailable in failover scenario:
         // cant really caluclate it, sometime it takes a few seconds, sometimes up to 30s
         // doesnt really matter what we set here
         ClusterClientOptions clusterClientOptions = ClusterClientOptions.builder()
+                // use dynamic timeout for cluster management commands
+                .timeoutOptions(TimeoutOptions.builder()
+                        .timeoutCommands(true)
+                        .timeoutSource(new DynamicClusterTimeout(redisCommandTimeout, redisCommandTimeout.plus(Duration.ofSeconds(1))))
+                        .build()
+                )
                 // timeout for cluster operations??? where is it used?
-                .timeoutOptions(TimeoutOptions.enabled(redisCommandTimeout))
                 .topologyRefreshOptions(ClusterTopologyRefreshOptions.builder()
                         // note: if a node disconnects (because the server died), we need to refresh the topology
                         // only then will the buffered commands be resend to the failed-over node
@@ -62,10 +110,11 @@ public class RedisConfig {
                         // we always want to refresh on PERSISTENT_RECONNECTS
                         // but if this falls in between this timeout, will the refresh just get lost, until a new
                         // trigger arrives??
-                        // just set it relatively low
+                        // just set it relatively low for now
                         .adaptiveRefreshTriggersTimeout(Duration.ofSeconds(5L))
                         .refreshTriggersReconnectAttempts(0) // we want to change nodes immediately on redirects
                         .build())
+                .socketOptions(socketOptions)
                 .build();
 
         RedisClusterConfiguration config = new RedisClusterConfiguration();
@@ -81,15 +130,10 @@ public class RedisConfig {
                 // the DNSNameResolveBuilder respects the TTL the server sends
                 .build();
 
-        // for some reason, buffered commands (as in we send it to a node, that fails)
-        // are not resend correctly on tcp timeouts?
-        // can we event set the TCP timeout somewhere??
-        // any commands active, while the node is down and failover happens
-        // will timeout
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
                 // this timeout affects all redis commands issued
                 // this is mainly used to when retrieving results, as we wait this time max for the result to arrive
-                .commandTimeout(redisCommandTimeout.plus(Duration.ofSeconds(5L)))
+                .commandTimeout(redisCommandTimeout)
                 .readFrom(ReadFrom.REPLICA_PREFERRED)
                 .clientResources(clientResources)
                 .clientOptions(clusterClientOptions)
