@@ -29,7 +29,7 @@ jinja2 -D with_app=true templates/docker-compose.valkey-cluster.yaml.j2 template
 ## Running the playground
 
 ```aiignore
-docker compose -f docker-compose.valkey-cluster.yaml up -d
+docker compose up -d
 ```
 Wait a few seconds for the cluster to initialize.
 
