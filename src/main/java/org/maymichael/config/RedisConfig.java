@@ -11,6 +11,8 @@ import io.lettuce.core.ReadFrom;
 import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.cluster.ClusterClientOptions;
 import io.lettuce.core.cluster.ClusterTopologyRefreshOptions;
+import io.lettuce.core.resource.ClientResources;
+import io.lettuce.core.resource.Delay;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -41,6 +43,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Configuration
@@ -55,11 +58,26 @@ public class RedisConfig {
 
     @Bean
     protected LettuceConnectionFactory redisConnectionFactory() {
+        // total time cluster will be unavailable in failover scenario:
+        // cant really caluclate it, sometime it takes a few seconds, sometimes up to 30s
+        // doesnt really matter what we set here
         ClusterClientOptions clusterClientOptions = ClusterClientOptions.builder()
-                .timeoutOptions(TimeoutOptions.enabled(Duration.ofSeconds(5L)))
+                // timeout for cluster operations??? where is it used?
+                .timeoutOptions(TimeoutOptions.enabled(redisCommandTimeout))
                 .topologyRefreshOptions(ClusterTopologyRefreshOptions.builder()
-                        .enablePeriodicRefresh(Duration.ofSeconds(30L)) // Refresh the topology periodically.
+                        // note: if a node disconnects (because the server died), we need to refresh the topology
+                        // only then will the buffered commands be resend to the failed-over node
+                        // either by the periodic refresh, or with adaptive triggers
+                        .enablePeriodicRefresh(Duration.ofSeconds(60L)) // Refresh the topology periodically.
                         .enableAllAdaptiveRefreshTriggers() // Refresh the topology based on events.
+                        // how often we do a refresh, during events
+                        // this is kind of strange...since events may get lost?
+                        // we always want to refresh on PERSISTENT_RECONNECTS
+                        // but if this falls in between this timeout, will the refresh just get lost, until a new
+                        // trigger arrives??
+                        // just set it relatively low
+                        .adaptiveRefreshTriggersTimeout(Duration.ofSeconds(5L))
+                        .refreshTriggersReconnectAttempts(0) // we want to change nodes immediately on redirects
                         .build())
                 .build();
 
@@ -68,9 +86,25 @@ public class RedisConfig {
         config.setMaxRedirects(redisProperties.getCluster().getMaxRedirects());
         config.setPassword(RedisPassword.of(redisProperties.getPassword()));
 
+        var clientResources = ClientResources.builder()
+                // how often we try to reconnect when any node fails
+                .reconnectDelay(Delay.exponential(0, 180, TimeUnit.SECONDS, 2))
+                // may need to add a custom address resolver for TTL?
+                // also in a docker swarm setup, this may be affected by its TTL, since by default
+                // the DNSNameResolveBuilder respects the TTL the server sends
+                .build();
+
+        // for some reason, buffered commands (as in we send it to a node, that fails)
+        // are not resend correctly on tcp timeouts?
+        // can we event set the TCP timeout somewhere??
+        // any commands active, while the node is down and failover happens
+        // will timeout
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
-                .commandTimeout(redisCommandTimeout)
+                // this timeout affects all redis commands issued
+                // this is mainly used to when retrieving results, as we wait this time max for the result to arrive
+                .commandTimeout(redisCommandTimeout.plus(Duration.ofSeconds(5L)))
                 .readFrom(ReadFrom.REPLICA_PREFERRED)
+                .clientResources(clientResources)
                 .clientOptions(clusterClientOptions)
                 .build();
         return new LettuceConnectionFactory(config, clientConfig);

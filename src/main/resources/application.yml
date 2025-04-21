@@ -10,7 +10,9 @@ spring:
       cluster:
         nodes:
           - localhost:6379
+        # how often we hop between nodes
         max-redirects: 4
+      # timeout for all redis commands (e.g. to retrieve results)
       timeout: 10000
   application:
     name: spring-redis-playground

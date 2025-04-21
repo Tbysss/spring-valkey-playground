@@ -76,6 +76,7 @@ public class DataService {
 
     public void saveBigData(int numItems, SaveStrategy strategy) {
         var t = Transaction.builder().build();
+        log.info("saveBigData request received - numItems={} strategy={} id={}", numItems, strategy.name(), t.getId());
         transactionRepository.save(t);
         long totalSize = 0L;
         StopWatch sw = new StopWatch();
@@ -83,7 +84,7 @@ public class DataService {
         sw.start("create dataset");
         var binaryDataSet = createDataSet(numItems);
         sw.stop();
-        log.info("data set creation time: duration={}ms", sw.lastTaskInfo().getTimeMillis());
+        log.info("data set creation time: duration={}ms id={}", sw.lastTaskInfo().getTimeMillis(), t.getId());
         for (int i = 0; i < numItems; i++) {
             var something = i % 2 == 0 ? "even" : "odd";
             var tv = TransactionValue.builder()
@@ -125,8 +126,8 @@ public class DataService {
                 break;
         }
         sw.stop();
-        log.info("save time: duration={}ms totalData=\"{}\" strategy={}", sw.lastTaskInfo().getTimeMillis(),
-                FileUtils.byteCountToDisplaySize(totalSize), strategy.name());
+        log.info("save time: duration={}ms totalData=\"{}\" strategy={} id={}", sw.lastTaskInfo().getTimeMillis(),
+                FileUtils.byteCountToDisplaySize(totalSize), strategy.name(), t.getId());
 
         sw.start("read");
         var results = stringRedisTemplate.executePipelined((RedisCallback<?>) con -> {
@@ -136,10 +137,10 @@ public class DataService {
         assert results.size() == 1;
         var valuesForTid = getAndCheckData(results, tvList);
         sw.stop();
-        log.info("read time: duration={}ms", sw.lastTaskInfo().getTimeMillis());
+        log.info("read time: duration={}ms id={}", sw.lastTaskInfo().getTimeMillis(), t.getId());
 
         var totalTransactions = transactionValueRepository.count();
-        log.info("totalTransactions={} values={}", totalTransactions, valuesForTid.size());
+        log.info("totalTransactions={} values={} id={}", totalTransactions, valuesForTid.size(), t.getId());
     }
 
     private Set<String> getAndCheckData(List<Object> results, ArrayList<TransactionValue> tvList) {

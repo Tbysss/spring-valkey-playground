@@ -16,7 +16,7 @@ public class DemoController {
 
 
     @PostMapping("/demo1")
-    public void saveWithRepository(){
+    public void saveWithRepository() {
         // demo1 : save with spring repositories (jpa)
         log.info("preparing demo 1 data...");
 
@@ -37,7 +37,7 @@ public class DemoController {
     }
 
     @PostMapping("/demo2")
-    public void saveWithKeyValueAdapter(){
+    public void saveWithKeyValueAdapter() {
         // demo2: save with key value adapter
 
         // advantage: more control
@@ -46,7 +46,7 @@ public class DemoController {
     }
 
     @PostMapping("/demo3")
-    public void saveWithPipeline(){
+    public void saveWithPipeline() {
         // demo3: save with pipeline key value adapter
 
         // advantage: much faster because of pipeline (does not wait for results, no delete)
@@ -55,36 +55,41 @@ public class DemoController {
     }
 
     @PostMapping("/demo4")
-    public void time(){
+    public void time() {
         // demo4: run demo1, demo2 and demo3 multiple times and get average time spend
         // overview of demo 1, demo 2 and demo 3
     }
 
     @PostMapping("/demo5")
-    public void partialUpdate(){
+    public void partialUpdate() {
         // demo5: partial update
     }
 
     @PostMapping("/demo6")
-    public void partialRead(){
+    public void partialRead() {
         // demo6: partial read
     }
 
     @PostMapping("/demo7")
-    public void demo7(){
+    public void demo7() {
         dataService.testMassGet();
     }
 
     @PostMapping("/demo8")
     @ResponseBody
-    public ResponseEntity<HttpStatus> demo8(@RequestParam(value = "numItems", defaultValue = "10") int items, @RequestParam(value = "strategy", defaultValue = "2") int strategy){
+    public ResponseEntity<HttpStatus> demo8(@RequestParam(value = "numItems", defaultValue = "10") int items, @RequestParam(value = "strategy", defaultValue = "2") int strategy) {
         // save big chunk of data
-        if(items < 0 ) return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
-        if(strategy >= DataService.SaveStrategy.values().length || strategy < 0) {
+        try {
+            if (items < 0) return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+            if (strategy >= DataService.SaveStrategy.values().length || strategy < 0) {
+                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+            }
+            dataService.saveBigData(items, DataService.SaveStrategy.values()[strategy]);
+            return new ResponseEntity<>(HttpStatus.OK);
+        } catch (Exception e) {
+            log.error("request failed: ", e);
             return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
-        dataService.saveBigData(items, DataService.SaveStrategy.values()[strategy]);
-        return new ResponseEntity<>(HttpStatus.OK);
     }
 
 }

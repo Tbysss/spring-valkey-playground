@@ -6,8 +6,34 @@ x-valkey-cluster: &valkey
   image: bitnami/valkey-cluster:8.1
   ulimits:
     memlock: -1
-  networks:
-    app:
+  command:
+    - bash
+    - -c
+    - |
+      # Load Valkey environment variables
+      . /opt/bitnami/scripts/valkey-cluster-env.sh
+      # Load libraries
+      . /opt/bitnami/scripts/libvalkeycluster.sh
+      # allow reads during failure states (e.g. during failover)
+      valkey_conf_set cluster-allow-reads-when-down yes
+      # no: allow incomplete cluster to continue serving requests
+      # may result in inconsistent data during failover
+      valkey_conf_set cluster-require-full-coverage yes
+
+      # important settings for high availability:
+      # cluster-replica-validity-factor 0
+      # see https://valkey.io/topics/cluster-tutorial/
+      # the other factor: repl-ping-replica-period, by default 10s
+      # HA settings:
+      valkey_conf_set cluster-replica-validity-factor 0
+      valkey_conf_set repl-ping-replica-period 2
+      # how long to wait for the failover to start (ms)
+      # does not matter in case we set cluster-replica-validity-factor to 0
+      valkey_conf_set cluster-node-timeout 2000
+      # -> will not try to failover for 2s (repl-ping-replica-period), on node failure
+
+      # run the original command
+      /opt/bitnami/scripts/valkey-cluster/run.sh
 
 # read only replicas for read requests
 x-valkey-replica: &valkeyReplica
@@ -47,6 +73,10 @@ services:
     ports:
       - 6379:6379
     {%- endif %}
+    networks:
+      app:
+        aliases:
+          - valkey
     environment:
       <<: [*nodes, *creator, *keys]
 {% endfor %}
@@ -54,6 +84,8 @@ services:
   valkey-replica-{{i}}:
     <<: *valkeyReplica
     hostname: valkey-replica-{{i}}
+    networks:
+      app:
     environment:
       <<: [*nodes, *keys]
 {% endfor %}
